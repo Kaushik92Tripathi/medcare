@@ -122,7 +122,7 @@ export default function Register() {
           <button type="submit" className="w-full py-2 text-white rounded-md bg-primary hover:bg-primary/90">
             Submit
           </button>
-          <button type="submit" className="w-full py-2 text-white rounded-md bg-primary hover:bg-primary/90 bg-[rgb(198,176,154)]">
+          <button type="button" className="w-full py-2 text-white rounded-md bg-[rgb(198,176,154)] hover:bg-[rgb(198,176,154)]/90 ">
             Reset
           </button>
         </form>
