@@ -62,11 +62,11 @@ export default function BookAppointment() {
 
   const scrollRight = () => {
     if (dateSliderRef.current) {
-      dateSliderRef.current.scrollBy({ left: 200, behavior: 'smooth' });
+      (dateSliderRef.current as HTMLElement).scrollBy({ left: 200, behavior: 'smooth' });
     }
   }
 
-  const selectInstitute = (institute) => {
+  const selectInstitute = (institute: string) => {
     setSelectedInstitute(institute);
     setShowDropdown(false);
   }
