@@ -1,130 +1,522 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import Link from "next/link"
-import { Calendar, Clock, CheckCircle, XCircle, Plus, Search, MoreHorizontal } from "lucide-react"
+import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
+import {
+  Calendar,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Plus,
+  Search,
+  MoreHorizontal,
+  Star,
+  ChevronDown,
+  ChevronUp,
+  Filter,
+  Edit,
+  Trash,
+  Ban,
+  Eye,
+  Check,
+  X,
+} from "lucide-react";
+import { format } from "date-fns";
+
+interface TimeSlot {
+  id: number;
+  startTime: string;
+  endTime: string;
+}
+
+interface Doctor {
+  id: number;
+  userId: number;
+  specialtyId: number | null;
+  degree: string;
+  experienceYears: number;
+  bio: string | null;
+  locationId: number | null;
+  consultationFee: number | null;
+  isAvailable: boolean;
+  avgRating: number;
+  reviewCount: number;
+  user: {
+    id: number;
+    name: string;
+    email: string;
+  };
+  location: {
+    id: number;
+    name: string;
+    address: string;
+    city: string;
+    state: string | null;
+    country: string;
+  } | null;
+  specialty: {
+    id: number;
+    name: string;
+  } | null;
+  availability: {
+    id: number;
+    dayOfWeek: number;
+    isAvailable: boolean;
+    timeSlot: TimeSlot;
+  }[];
+}
+
+interface Patient {
+  id: number;
+  name: string;
+  email: string;
+}
+
+interface Appointment {
+  id: number;
+  patientId: number;
+  doctorId: number;
+  appointmentDate: string;
+  timeSlotId: number;
+  appointmentType: string;
+  status: string;
+  patientProblem: string;
+  patientAge: number;
+  patientGender: string;
+  doctor: Doctor;
+  patient: Patient;
+  timeSlot: TimeSlot;
+}
+
+interface Stats {
+  total: number;
+  confirmed: number;
+  pending: number;
+  cancelled: number;
+}
+
+interface Education {
+  id: number;
+  degree: string;
+  institution: string;
+  year: number;
+}
+
+interface Experience {
+  id: number;
+  position: string;
+  hospital: string;
+  startYear: number;
+  endYear: number | null;
+}
+
+interface DoctorWithStats extends Doctor {
+  totalPatients: number;
+  averageRating: number;
+}
+
+type SortField = "name" | "specialty" | "experience" | "patients" | "rating";
+type SortOrder = "asc" | "desc";
+
+type AppointmentSortField = "id" | "patient" | "doctor" | "date" | "type";
+type AppointmentStatus = "all" | "confirmed" | "pending" | "cancelled";
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState("appointments")
+  const [activeTab, setActiveTab] = useState("appointments");
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [doctors, setDoctors] = useState<DoctorWithStats[]>([]);
+  const [stats, setStats] = useState<Stats>({
+    total: 0,
+    confirmed: 0,
+    pending: 0,
+    cancelled: 0,
+  });
 
-  // Mock data for appointments
-  const appointments = [
-    {
-      id: 1,
-      patient: "John Smith",
-      doctor: "Dr. Jane Doe",
-      date: "22 Dec 2022",
-      time: "9:30 AM",
-      type: "Video Consultation",
-      status: "Pending",
-    },
-    {
-      id: 2,
-      patient: "Sarah Johnson",
-      doctor: "Dr. Sam Wilson",
-      date: "22 Dec 2022",
-      time: "10:30 AM",
-      type: "Hospital Visit",
-      status: "Confirmed",
-    },
-    {
-      id: 3,
-      patient: "Michael Brown",
-      doctor: "Dr. Pepper Potts",
-      date: "23 Dec 2022",
-      time: "11:00 AM",
-      type: "Video Consultation",
-      status: "Cancelled",
-    },
-    {
-      id: 4,
-      patient: "Emily Davis",
-      doctor: "Dr. Tony Stark",
-      date: "23 Dec 2022",
-      time: "2:30 PM",
-      type: "Hospital Visit",
-      status: "Pending",
-    },
-    {
-      id: 5,
-      patient: "David Wilson",
-      doctor: "Dr. Meghan",
-      date: "24 Dec 2022",
-      time: "9:00 AM",
-      type: "Video Consultation",
-      status: "Confirmed",
-    },
-  ]
+  // New state variables
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedSpecialty, setSelectedSpecialty] = useState<string>("");
+  const [selectedLocation, setSelectedLocation] = useState<string>("");
+  const [sortField, setSortField] = useState<SortField>("name");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
+  const [activeActionId, setActiveActionId] = useState<number | null>(null);
 
-  // Mock data for doctors
-  const doctors = [
-    {
-      id: 1,
-      name: "Dr. Jane Doe",
-      specialty: "Dentist",
-      qualification: "MBBS",
-      experience: "5 Years",
-      patients: 120,
-      rating: 4.8,
-    },
-    {
-      id: 2,
-      name: "Dr. Sam Wilson",
-      specialty: "Dentist",
-      qualification: "BDS",
-      experience: "5 Years",
-      patients: 98,
-      rating: 4.5,
-    },
-    {
-      id: 3,
-      name: "Dr. Pepper Potts",
-      specialty: "Dentist",
-      qualification: "BHMS",
-      experience: "2 Years",
-      patients: 45,
-      rating: 4.7,
-    },
-    {
-      id: 4,
-      name: "Dr. Tony Stark",
-      specialty: "Dentist",
-      qualification: "MDS",
-      experience: "4 Years",
-      patients: 87,
-      rating: 4.9,
-    },
-  ]
+  // New appointment-related state
+  const [appointmentSearchTerm, setAppointmentSearchTerm] = useState("");
+  const [selectedStatus, setSelectedStatus] =
+    useState<AppointmentStatus>("all");
+  const [selectedDate, setSelectedDate] = useState("");
+  const [appointmentSortField, setAppointmentSortField] =
+    useState<AppointmentSortField>("date");
+  const [appointmentSortOrder, setAppointmentSortOrder] =
+    useState<SortOrder>("desc");
+  const [appointmentPage, setAppointmentPage] = useState(1);
+  const [appointmentsPerPage] = useState(10);
+  const [activeAppointmentId, setActiveAppointmentId] = useState<number | null>(
+    null
+  );
+
+  // Derived values
+  const specialties = useMemo(() => {
+    const uniqueSpecialties = new Set(
+      doctors.map((d) => d.specialty?.name).filter(Boolean)
+    );
+    return Array.from(uniqueSpecialties);
+  }, [doctors]);
+
+  const locations = useMemo(() => {
+    const uniqueLocations = new Set(
+      doctors.map((d) => d.location?.city).filter(Boolean)
+    );
+    return Array.from(uniqueLocations);
+  }, [doctors]);
+
+  // Filter and sort doctors
+  const filteredDoctors = useMemo(() => {
+    return doctors
+      .filter((doctor) => {
+        const matchesSearch =
+          doctor.user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          doctor.specialty?.name
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
+          doctor.degree.toLowerCase().includes(searchTerm.toLowerCase());
+
+        const matchesSpecialty =
+          !selectedSpecialty || doctor.specialty?.name === selectedSpecialty;
+        const matchesLocation =
+          !selectedLocation || doctor.location?.city === selectedLocation;
+
+        return matchesSearch && matchesSpecialty && matchesLocation;
+      })
+      .sort((a, b) => {
+        let comparison = 0;
+        switch (sortField) {
+          case "name":
+            comparison = a.user.name.localeCompare(b.user.name);
+            break;
+          case "specialty":
+            comparison = (a.specialty?.name || "").localeCompare(
+              b.specialty?.name || ""
+            );
+            break;
+          case "experience":
+            comparison = a.experienceYears - b.experienceYears;
+            break;
+          case "patients":
+            comparison = a.totalPatients - b.totalPatients;
+            break;
+          case "rating":
+            comparison = a.avgRating - b.avgRating;
+            break;
+        }
+        return sortOrder === "asc" ? comparison : -comparison;
+      });
+  }, [
+    doctors,
+    searchTerm,
+    selectedSpecialty,
+    selectedLocation,
+    sortField,
+    sortOrder,
+  ]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredDoctors.length / itemsPerPage);
+  const paginatedDoctors = filteredDoctors.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  // Handle sorting
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortOrder("asc");
+    }
+  };
+
+  // Handle doctor actions
+  const handleAction = async (action: string, doctorId: number) => {
+    switch (action) {
+      case "edit":
+        // Navigate to edit page
+        window.location.href = `/admin/doctors/${doctorId}/edit`;
+        break;
+      case "delete":
+        if (confirm("Are you sure you want to delete this doctor?")) {
+          // Implement delete logic
+          console.log("Delete doctor:", doctorId);
+        }
+        break;
+      case "toggle-availability":
+        // Implement toggle availability logic
+        console.log("Toggle availability:", doctorId);
+        break;
+    }
+    setActiveActionId(null);
+  };
+
+  // Filter and sort appointments
+  const filteredAppointments = useMemo(() => {
+    return appointments
+      .filter((appointment) => {
+        const matchesSearch =
+          appointment.patient.name
+            .toLowerCase()
+            .includes(appointmentSearchTerm.toLowerCase()) ||
+          appointment.doctor.user.name
+            .toLowerCase()
+            .includes(appointmentSearchTerm.toLowerCase()) ||
+          appointment.appointmentType
+            .toLowerCase()
+            .includes(appointmentSearchTerm.toLowerCase());
+
+        const matchesStatus =
+          selectedStatus === "all" || appointment.status === selectedStatus;
+
+        const matchesDate =
+          !selectedDate ||
+          format(new Date(appointment.appointmentDate), "yyyy-MM-dd") ===
+            selectedDate;
+
+        return matchesSearch && matchesStatus && matchesDate;
+      })
+      .sort((a, b) => {
+        let comparison = 0;
+        switch (appointmentSortField) {
+          case "id":
+            comparison = a.id - b.id;
+            break;
+          case "patient":
+            comparison = a.patient.name.localeCompare(b.patient.name);
+            break;
+          case "doctor":
+            comparison = a.doctor.user.name.localeCompare(b.doctor.user.name);
+            break;
+          case "date":
+            comparison =
+              new Date(a.appointmentDate).getTime() -
+              new Date(b.appointmentDate).getTime();
+            break;
+          case "type":
+            comparison = a.appointmentType.localeCompare(b.appointmentType);
+            break;
+        }
+        return appointmentSortOrder === "asc" ? comparison : -comparison;
+      });
+  }, [
+    appointments,
+    appointmentSearchTerm,
+    selectedStatus,
+    selectedDate,
+    appointmentSortField,
+    appointmentSortOrder,
+  ]);
+
+  // Appointment pagination
+  const totalAppointmentPages = Math.ceil(
+    filteredAppointments.length / appointmentsPerPage
+  );
+  const paginatedAppointments = filteredAppointments.slice(
+    (appointmentPage - 1) * appointmentsPerPage,
+    appointmentPage * appointmentsPerPage
+  );
+
+  // Handle appointment sorting
+  const handleAppointmentSort = (field: AppointmentSortField) => {
+    if (appointmentSortField === field) {
+      setAppointmentSortOrder(appointmentSortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setAppointmentSortField(field);
+      setAppointmentSortOrder("desc");
+    }
+  };
+
+  // Handle appointment actions
+  const handleAppointmentAction = async (action: string, appointmentId: number) => {
+    try {
+      switch (action) {
+        case 'view':
+          window.location.href = `/admin/appointments/${appointmentId}`;
+          break;
+        case 'confirm':
+          if (confirm('Are you sure you want to confirm this appointment?')) {
+            const response = await fetch(`/api/appointments/${appointmentId}`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ status: 'confirmed' }),
+            });
+
+            const data = await response.json();
+            if (data.error) {
+              throw new Error(data.error);
+            }
+
+            // Update local state
+            setAppointments(appointments.map(apt => 
+              apt.id === appointmentId ? { ...apt, status: 'confirmed' } : apt
+            ));
+
+            // Update stats
+            setStats(prev => ({
+              ...prev,
+              confirmed: prev.confirmed + 1,
+              pending: prev.pending - 1,
+            }));
+          }
+          break;
+        case 'cancel':
+          if (confirm('Are you sure you want to cancel this appointment?')) {
+            const currentAppointment = appointments.find(apt => apt.id === appointmentId);
+            if (!currentAppointment) return;
+
+            const response = await fetch(`/api/appointments/${appointmentId}`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ status: 'cancelled' }),
+            });
+
+            const data = await response.json();
+            if (data.error) {
+              throw new Error(data.error);
+            }
+
+            // Update local state
+            setAppointments(appointments.map(apt => 
+              apt.id === appointmentId ? { ...apt, status: 'cancelled' } : apt
+            ));
+
+            // Update stats
+            setStats(prev => ({
+              ...prev,
+              cancelled: prev.cancelled + 1,
+              [currentAppointment.status === 'confirmed' ? 'confirmed' : 'pending']: 
+                prev[currentAppointment.status === 'confirmed' ? 'confirmed' : 'pending'] - 1,
+            }));
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('Error handling appointment action:', error);
+      alert('Failed to update appointment status. Please try again.');
+    }
+    setActiveAppointmentId(null);
+  };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [appointmentsRes, doctorsRes] = await Promise.all([
+          fetch("/api/appointments"),
+          fetch("/api/doctors"),
+        ]);
+
+        const [appointmentsData, doctorsData] = await Promise.all([
+          appointmentsRes.json(),
+          doctorsRes.json(),
+        ]);
+
+        if (appointmentsData.error) throw new Error(appointmentsData.error);
+        if (doctorsData.error) throw new Error(doctorsData.error);
+
+        setAppointments(appointmentsData.appointments);
+        setStats(appointmentsData.stats);
+        setDoctors(doctorsData.doctors);
+      } catch (err: any) {
+        setError(err.message || "Failed to fetch data");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        Loading...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-red-500">
+        Error: {error}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container px-4 py-8 mx-auto">
         <div className="flex flex-col gap-6">
-          {/* Header */}
+          {/* Header with enhanced search and filters */}
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
               <h1 className="text-2xl font-bold">Admin Dashboard</h1>
               <p className="text-gray-500">Manage appointments and doctors</p>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="relative">
-                <Search className="absolute w-5 h-5 text-gray-400 transform -translate-y-1/2 left-3 top-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  className="w-full h-10 pl-10 pr-4 border rounded-md focus:outline-none focus:ring-1 focus:ring-primary sm:w-64"
-                />
-              </div>
+            {activeTab === "doctors" && (
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="relative">
+                  <Search className="absolute w-5 h-5 text-gray-400 transform -translate-y-1/2 left-3 top-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search doctors..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full h-10 pl-10 pr-4 border rounded-md focus:outline-none focus:ring-1 focus:ring-primary sm:w-64"
+                  />
+                </div>
 
-              <Link
-                href="/admin/doctors/create"
-                className="flex items-center justify-center h-10 px-4 text-white rounded-md bg-primary hover:bg-primary/90"
-              >
-                <Plus className="w-5 h-5 mr-2" />
-                Add New Doctor
-              </Link>
-            </div>
+                <select
+                  value={selectedSpecialty}
+                  onChange={(e) => setSelectedSpecialty(e.target.value)}
+                  className="h-10 px-4 border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">All Specialties</option>
+                  {specialties.map((specialty) => (
+                    <option key={specialty} value={specialty}>
+                      {specialty}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedLocation}
+                  onChange={(e) => setSelectedLocation(e.target.value)}
+                  className="h-10 px-4 border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">All Locations</option>
+                  {locations.map((location) => (
+                    <option key={location} value={location}>
+                      {location}
+                    </option>
+                  ))}
+                </select>
+
+                <Link
+                  href="/admin/doctors/create"
+                  className="flex items-center justify-center h-10 px-4 text-white rounded-md bg-primary hover:bg-primary/90"
+                >
+                  <Plus className="w-5 h-5 mr-2" />
+                  Add New Doctor
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* Stats */}
@@ -136,7 +528,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Total Appointments</p>
-                  <p className="text-2xl font-bold">248</p>
+                  <p className="text-2xl font-bold">{stats.total}</p>
                 </div>
               </div>
             </div>
@@ -148,7 +540,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Confirmed</p>
-                  <p className="text-2xl font-bold">182</p>
+                  <p className="text-2xl font-bold">{stats.confirmed}</p>
                 </div>
               </div>
             </div>
@@ -160,7 +552,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Pending</p>
-                  <p className="text-2xl font-bold">42</p>
+                  <p className="text-2xl font-bold">{stats.pending}</p>
                 </div>
               </div>
             </div>
@@ -172,7 +564,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Cancelled</p>
-                  <p className="text-2xl font-bold">24</p>
+                  <p className="text-2xl font-bold">{stats.cancelled}</p>
                 </div>
               </div>
             </div>
@@ -192,7 +584,9 @@ export default function AdminDashboard() {
             </button>
             <button
               className={`px-4 py-2 text-sm font-medium ${
-                activeTab === "doctors" ? "text-primary border-b-2 border-primary" : "text-gray-500 hover:text-gray-700"
+                activeTab === "doctors"
+                  ? "text-primary border-b-2 border-primary"
+                  : "text-gray-500 hover:text-gray-700"
               }`}
               onClick={() => setActiveTab("doctors")}
             >
@@ -203,92 +597,522 @@ export default function AdminDashboard() {
           {/* Content */}
           <div className="bg-white rounded-lg shadow-sm">
             {activeTab === "appointments" ? (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="text-left bg-gray-50">
-                      <th className="p-4 text-sm font-medium text-gray-500">ID</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Patient</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Doctor</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Date</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Time</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Type</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Status</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {appointments.map((appointment) => (
-                      <tr key={appointment.id}>
-                        <td className="p-4 text-sm">#{appointment.id}</td>
-                        <td className="p-4 text-sm font-medium">{appointment.patient}</td>
-                        <td className="p-4 text-sm">{appointment.doctor}</td>
-                        <td className="p-4 text-sm">{appointment.date}</td>
-                        <td className="p-4 text-sm">{appointment.time}</td>
-                        <td className="p-4 text-sm">{appointment.type}</td>
-                        <td className="p-4 text-sm">
-                          <span
-                            className={`px-2 py-1 text-xs font-medium rounded-full ${
-                              appointment.status === "Confirmed"
-                                ? "bg-green-100 text-green-800"
-                                : appointment.status === "Pending"
+              <div className="overflow-hidden bg-white rounded-lg shadow">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-left bg-gray-50">
+                        <th
+                          className="p-4 text-sm font-medium text-gray-500 cursor-pointer"
+                          onClick={() => handleAppointmentSort("id")}
+                        >
+                          <div className="flex items-center">
+                            ID
+                            {appointmentSortField === "id" &&
+                              (appointmentSortOrder === "asc" ? (
+                                <ChevronUp className="w-4 h-4 ml-1" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 ml-1" />
+                              ))}
+                          </div>
+                        </th>
+                        <th
+                          className="p-4 text-sm font-medium text-gray-500 cursor-pointer"
+                          onClick={() => handleAppointmentSort("patient")}
+                        >
+                          <div className="flex items-center">
+                            Patient
+                            {appointmentSortField === "patient" &&
+                              (appointmentSortOrder === "asc" ? (
+                                <ChevronUp className="w-4 h-4 ml-1" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 ml-1" />
+                              ))}
+                          </div>
+                        </th>
+                        <th
+                          className="p-4 text-sm font-medium text-gray-500 cursor-pointer"
+                          onClick={() => handleAppointmentSort("doctor")}
+                        >
+                          <div className="flex items-center">
+                            Doctor
+                            {appointmentSortField === "doctor" &&
+                              (appointmentSortOrder === "asc" ? (
+                                <ChevronUp className="w-4 h-4 ml-1" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 ml-1" />
+                              ))}
+                          </div>
+                        </th>
+                        <th
+                          className="p-4 text-sm font-medium text-gray-500 cursor-pointer"
+                          onClick={() => handleAppointmentSort("date")}
+                        >
+                          <div className="flex items-center">
+                            Date
+                            {appointmentSortField === "date" &&
+                              (appointmentSortOrder === "asc" ? (
+                                <ChevronUp className="w-4 h-4 ml-1" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 ml-1" />
+                              ))}
+                          </div>
+                        </th>
+                        <th className="p-4 text-sm font-medium text-gray-500">
+                          Time
+                        </th>
+                        <th
+                          className="p-4 text-sm font-medium text-gray-500 cursor-pointer"
+                          onClick={() => handleAppointmentSort("type")}
+                        >
+                          <div className="flex items-center">
+                            Type
+                            {appointmentSortField === "type" &&
+                              (appointmentSortOrder === "asc" ? (
+                                <ChevronUp className="w-4 h-4 ml-1" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 ml-1" />
+                              ))}
+                          </div>
+                        </th>
+                        <th className="p-4 text-sm font-medium text-gray-500">
+                          Status
+                        </th>
+                        <th className="p-4 text-sm font-medium text-gray-500">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {paginatedAppointments.map((appointment) => (
+                        <tr key={appointment.id}>
+                          <td className="p-4 text-sm">#{appointment.id}</td>
+                          <td className="p-4 text-sm font-medium">
+                            {appointment.patient.name}
+                          </td>
+                          <td className="p-4 text-sm">
+                            {appointment.doctor.user.name}
+                          </td>
+                          <td className="p-4 text-sm">
+                            {format(
+                              new Date(appointment.appointmentDate),
+                              "dd MMM yyyy"
+                            )}
+                          </td>
+                          <td className="p-4 text-sm">
+                            {appointment.timeSlot.startTime
+                              ? format(
+                                  new Date(appointment.timeSlot.startTime),
+                                  "h:mm a"
+                                )
+                              : "N/A"}
+                            {" - "}
+                            {appointment.timeSlot.endTime
+                              ? format(
+                                  new Date(appointment.timeSlot.endTime),
+                                  "h:mm a"
+                                )
+                              : "N/A"}
+                          </td>
+                          <td className="p-4 text-sm">
+                            {appointment.appointmentType}
+                          </td>
+                          <td className="p-4 text-sm">
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                appointment.status === "confirmed"
+                                  ? "bg-green-100 text-green-800"
+                                  : appointment.status === "pending"
                                   ? "bg-yellow-100 text-yellow-800"
                                   : "bg-red-100 text-red-800"
-                            }`}
-                          >
-                            {appointment.status}
-                          </span>
-                        </td>
-                        <td className="p-4 text-sm">
-                          <button className="p-1 text-gray-500 rounded-full hover:bg-gray-100">
-                            <MoreHorizontal className="w-5 h-5" />
-                          </button>
-                        </td>
-                      </tr>
+                              }`}
+                            >
+                              {appointment.status.charAt(0).toUpperCase() +
+                                appointment.status.slice(1)}
+                            </span>
+                          </td>
+                          <td className="p-4 text-sm">
+                            <div className="relative">
+                              <button
+                                onClick={() =>
+                                  setActiveAppointmentId(
+                                    activeAppointmentId === appointment.id
+                                      ? null
+                                      : appointment.id
+                                  )
+                                }
+                                className="p-1 text-gray-500 rounded-full hover:bg-gray-100"
+                              >
+                                <MoreHorizontal className="w-5 h-5" />
+                              </button>
+
+                              {activeAppointmentId === appointment.id && (
+                                <div className="absolute right-0 z-10 w-48 py-1 mt-2 bg-white rounded-md shadow-lg">
+                                  <button
+                                    onClick={() =>
+                                      handleAppointmentAction(
+                                        "view",
+                                        appointment.id
+                                      )
+                                    }
+                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                  >
+                                    <Eye className="w-4 h-4 mr-2" />
+                                    View Details
+                                  </button>
+                                  {appointment.status === "pending" && (
+                                    <button
+                                      onClick={() =>
+                                        handleAppointmentAction(
+                                          "confirm",
+                                          appointment.id
+                                        )
+                                      }
+                                      className="flex items-center w-full px-4 py-2 text-sm text-green-600 hover:bg-gray-100"
+                                    >
+                                      <Check className="w-4 h-4 mr-2" />
+                                      Confirm Appointment
+                                    </button>
+                                  )}
+                                  {appointment.status !== "cancelled" && (
+                                    <button
+                                      onClick={() =>
+                                        handleAppointmentAction(
+                                          "cancel",
+                                          appointment.id
+                                        )
+                                      }
+                                      className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                                    >
+                                      <X className="w-4 h-4 mr-2" />
+                                      Cancel Appointment
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Appointments Pagination */}
+                <div className="flex items-center justify-between px-4 py-3 bg-white border-t">
+                  <div className="flex items-center">
+                    <span className="text-sm text-gray-700">
+                      Showing {(appointmentPage - 1) * appointmentsPerPage + 1}{" "}
+                      to{" "}
+                      {Math.min(
+                        appointmentPage * appointmentsPerPage,
+                        filteredAppointments.length
+                      )}{" "}
+                      of {filteredAppointments.length} appointments
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() =>
+                        setAppointmentPage((page) => Math.max(1, page - 1))
+                      }
+                      disabled={appointmentPage === 1}
+                      className="px-3 py-1 text-sm font-medium text-gray-700 bg-white border rounded-md hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    {Array.from(
+                      { length: totalAppointmentPages },
+                      (_, i) => i + 1
+                    ).map((page) => (
+                      <button
+                        key={page}
+                        onClick={() => setAppointmentPage(page)}
+                        className={`px-3 py-1 text-sm font-medium rounded-md ${
+                          appointmentPage === page
+                            ? "bg-primary text-white"
+                            : "text-gray-700 bg-white border hover:bg-gray-50"
+                        }`}
+                      >
+                        {page}
+                      </button>
                     ))}
-                  </tbody>
-                </table>
+                    <button
+                      onClick={() =>
+                        setAppointmentPage((page) =>
+                          Math.min(totalAppointmentPages, page + 1)
+                        )
+                      }
+                      disabled={appointmentPage === totalAppointmentPages}
+                      className="px-3 py-1 text-sm font-medium text-gray-700 bg-white border rounded-md hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="text-left bg-gray-50">
-                      <th className="p-4 text-sm font-medium text-gray-500">ID</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Name</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Specialty</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Qualification</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Experience</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Patients</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Rating</th>
-                      <th className="p-4 text-sm font-medium text-gray-500">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {doctors.map((doctor) => (
-                      <tr key={doctor.id}>
-                        <td className="p-4 text-sm">#{doctor.id}</td>
-                        <td className="p-4 text-sm font-medium">{doctor.name}</td>
-                        <td className="p-4 text-sm">{doctor.specialty}</td>
-                        <td className="p-4 text-sm">{doctor.qualification}</td>
-                        <td className="p-4 text-sm">{doctor.experience}</td>
-                        <td className="p-4 text-sm">{doctor.patients}</td>
-                        <td className="p-4 text-sm">{doctor.rating}</td>
-                        <td className="p-4 text-sm">
-                          <button className="p-1 text-gray-500 rounded-full hover:bg-gray-100">
-                            <MoreHorizontal className="w-5 h-5" />
-                          </button>
-                        </td>
+              <div className="overflow-hidden bg-white rounded-lg shadow">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-left bg-gray-50">
+                        <th className="p-4 text-sm font-medium text-gray-500">
+                          ID
+                        </th>
+                        <th
+                          className="p-4 text-sm font-medium text-gray-500 cursor-pointer"
+                          onClick={() => handleSort("name")}
+                        >
+                          <div className="flex items-center">
+                            Name
+                            {sortField === "name" &&
+                              (sortOrder === "asc" ? (
+                                <ChevronUp className="w-4 h-4 ml-1" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 ml-1" />
+                              ))}
+                          </div>
+                        </th>
+                        <th
+                          className="p-4 text-sm font-medium text-gray-500 cursor-pointer"
+                          onClick={() => handleSort("specialty")}
+                        >
+                          <div className="flex items-center">
+                            Specialty
+                            {sortField === "specialty" &&
+                              (sortOrder === "asc" ? (
+                                <ChevronUp className="w-4 h-4 ml-1" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 ml-1" />
+                              ))}
+                          </div>
+                        </th>
+                        <th className="p-4 text-sm font-medium text-gray-500">
+                          Degree
+                        </th>
+                        <th
+                          className="p-4 text-sm font-medium text-gray-500 cursor-pointer"
+                          onClick={() => handleSort("experience")}
+                        >
+                          <div className="flex items-center">
+                            Experience
+                            {sortField === "experience" &&
+                              (sortOrder === "asc" ? (
+                                <ChevronUp className="w-4 h-4 ml-1" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 ml-1" />
+                              ))}
+                          </div>
+                        </th>
+                        <th className="p-4 text-sm font-medium text-gray-500">
+                          Location
+                        </th>
+                        <th className="p-4 text-sm font-medium text-gray-500">
+                          Fee
+                        </th>
+                        <th className="p-4 text-sm font-medium text-gray-500">
+                          Status
+                        </th>
+                        <th
+                          className="p-4 text-sm font-medium text-gray-500 cursor-pointer"
+                          onClick={() => handleSort("patients")}
+                        >
+                          <div className="flex items-center">
+                            Patients
+                            {sortField === "patients" &&
+                              (sortOrder === "asc" ? (
+                                <ChevronUp className="w-4 h-4 ml-1" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 ml-1" />
+                              ))}
+                          </div>
+                        </th>
+                        <th
+                          className="p-4 text-sm font-medium text-gray-500 cursor-pointer"
+                          onClick={() => handleSort("rating")}
+                        >
+                          <div className="flex items-center">
+                            Rating
+                            {sortField === "rating" &&
+                              (sortOrder === "asc" ? (
+                                <ChevronUp className="w-4 h-4 ml-1" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 ml-1" />
+                              ))}
+                          </div>
+                        </th>
+                        <th className="p-4 text-sm font-medium text-gray-500">
+                          Actions
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y">
+                      {paginatedDoctors.map((doctor) => (
+                        <tr key={doctor.id}>
+                          <td className="p-4 text-sm">#{doctor.id}</td>
+                          <td className="p-4 text-sm font-medium">
+                            {doctor.user.name}
+                          </td>
+                          <td className="p-4 text-sm">
+                            {doctor.specialty?.name || "Not specified"}
+                          </td>
+                          <td className="p-4 text-sm">{doctor.degree}</td>
+                          <td className="p-4 text-sm">
+                            {doctor.experienceYears} Years
+                          </td>
+                          <td className="p-4 text-sm">
+                            {doctor.location
+                              ? `${doctor.location.city}, ${doctor.location.country}`
+                              : "Not specified"}
+                          </td>
+                          <td className="p-4 text-sm">
+                            {doctor.consultationFee
+                              ? `₹${doctor.consultationFee}`
+                              : "Not set"}
+                          </td>
+                          <td className="p-4 text-sm">
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                doctor.isAvailable
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-red-100 text-red-800"
+                              }`}
+                            >
+                              {doctor.isAvailable ? "Available" : "Unavailable"}
+                            </span>
+                          </td>
+                          <td className="p-4 text-sm">
+                            {doctor.totalPatients}
+                          </td>
+                          <td className="p-4 text-sm">
+                            <div className="flex items-center">
+                              <Star className="w-4 h-4 mr-1 text-yellow-400 fill-current" />
+                              {doctor.avgRating.toFixed(1)}
+                              <span className="ml-1 text-gray-500">
+                                ({doctor.reviewCount})
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-4 text-sm">
+                            <div className="relative">
+                              <button
+                                onClick={() =>
+                                  setActiveActionId(
+                                    activeActionId === doctor.id
+                                      ? null
+                                      : doctor.id
+                                  )
+                                }
+                                className="p-1 text-gray-500 rounded-full hover:bg-gray-100"
+                              >
+                                <MoreHorizontal className="w-5 h-5" />
+                              </button>
+
+                              {activeActionId === doctor.id && (
+                                <div className="absolute right-0 z-10 w-48 py-1 mt-2 bg-white rounded-md shadow-lg">
+                                  <Link
+                                    href={`/admin/doctors/${doctor.id}`}
+                                    className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                  >
+                                    <Search className="w-4 h-4 mr-2" />
+                                    View Details
+                                  </Link>
+                                  <button
+                                    onClick={() =>
+                                      handleAction("edit", doctor.id)
+                                    }
+                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                  >
+                                    <Edit className="w-4 h-4 mr-2" />
+                                    Edit Doctor
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleAction(
+                                        "toggle-availability",
+                                        doctor.id
+                                      )
+                                    }
+                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                  >
+                                    <Ban className="w-4 h-4 mr-2" />
+                                    {doctor.isAvailable
+                                      ? "Mark Unavailable"
+                                      : "Mark Available"}
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleAction("delete", doctor.id)
+                                    }
+                                    className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                                  >
+                                    <Trash className="w-4 h-4 mr-2" />
+                                    Delete Doctor
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                <div className="flex items-center justify-between px-4 py-3 bg-white border-t">
+                  <div className="flex items-center">
+                    <span className="text-sm text-gray-700">
+                      Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}
+                      {Math.min(
+                        currentPage * itemsPerPage,
+                        filteredDoctors.length
+                      )}{" "}
+                      of {filteredDoctors.length} doctors
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() =>
+                        setCurrentPage((page) => Math.max(1, page - 1))
+                      }
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 text-sm font-medium text-gray-700 bg-white border rounded-md hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                      (page) => (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={`px-3 py-1 text-sm font-medium rounded-md ${
+                            currentPage === page
+                              ? "bg-primary text-white"
+                              : "text-gray-700 bg-white border hover:bg-gray-50"
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      )
+                    )}
+                    <button
+                      onClick={() =>
+                        setCurrentPage((page) => Math.min(totalPages, page + 1))
+                      }
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1 text-sm font-medium text-gray-700 bg-white border rounded-md hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }
-

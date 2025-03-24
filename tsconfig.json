@@ -22,6 +22,6 @@
       "@/*": ["./*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "app/api/admin/doctors/route.js", "app/api/appointments/route.js", "app/api/dashboard/admin/route.js", "app/api/dashboard/appointments/[id]/route.js", "app/api/doctors/route.js", "app/api/doctors/top/route.js", "app/api/doctors/[id]/route.js", "app/api/auth/login/route.js", "app/api/register/route.js", "app/api/migrate/route.js"],
   "exclude": ["node_modules"]
 }

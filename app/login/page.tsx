@@ -4,16 +4,59 @@ import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { Eye, EyeOff, Mail, Lock } from "lucide-react"
+import { useRouter } from 'next/navigation'
 
 export default function Login() {
+  const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
 
   // Reset function
   const handleReset = () => {
     setEmail("")
     setPassword("")
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError("")
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Invalid email or password')
+      }
+
+      // Store the token in localStorage
+      localStorage.setItem('token', data.token)
+      
+      // Redirect based on user role
+      if (data.user.role === 'doctor') {
+        router.push('/doctor/dashboard')
+      } else if (data.user.role === 'admin') {
+        router.push('/admin/dashboard')
+      } else {
+        router.push('/appointments')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred during login")
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -38,7 +81,9 @@ export default function Login() {
           .
         </p>
 
-        <form className="space-y-4">
+        {error && <p className="text-red-500 text-center mb-4">{error}</p>}
+
+        <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-1">
             <label htmlFor="email" className="text-sm font-medium text-gray-500">
               Email
@@ -52,6 +97,7 @@ export default function Login() {
                 onChange={(e)=>setEmail(e.target.value)}
                 placeholder="Enter your email address"
                 className="w-full h-10 pl-10 pr-4 border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                required
               />
             </div>
           </div>
@@ -69,6 +115,7 @@ export default function Login() {
                 value={password}
                 onChange={(e)=>setPassword(e.target.value)}
                 className="w-full h-10 pl-10 pr-10 border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                required
               />
               <button
                 type="button"
@@ -84,10 +131,18 @@ export default function Login() {
             </div>
           </div>
 
-          <button type="submit" className="w-full py-2 text-white rounded-md bg-primary hover:bg-primary/90">
-            Login
+          <button 
+            type="submit" 
+            className="w-full py-2 text-white rounded-md bg-primary hover:bg-primary/90"
+            disabled={loading}
+          >
+            {loading ? "Logging in..." : "Login"}
           </button>
-          <button type="button" onClick={handleReset} className="w-full py-2 text-white rounded-md bg-primary hover:bg-primary/90 bg-[rgb(198,176,154)]">
+          <button 
+            type="button" 
+            onClick={handleReset} 
+            className="w-full py-2 text-white rounded-md bg-primary hover:bg-primary/90 bg-[rgb(198,176,154)]"
+          >
             Reset
           </button>
           <p className="mb-6 text-sm text-center">Forgot Password?</p>

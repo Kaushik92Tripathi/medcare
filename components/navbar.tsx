@@ -29,11 +29,9 @@ export default function Navbar() {
             <Link href="/appointments" className="text-gray-500 hover:text-primary">
               Appointments
             </Link>
-            <Link href="/blog" className="text-gray-500 hover:text-primary">
-              Health Blog
-            </Link>
-            <Link href="/reviews" className="text-gray-500 hover:text-primary">
-              Reviews
+            
+            <Link href="/emergency" className="text-gray-500 hover:text-primary">
+              Help
             </Link>
           </nav>
         </div>
